@@ -756,36 +756,38 @@
     </div>
 
     <script type="module">
-        // Firebase yapılandırma objeniz
+        // Firebase yapılandırma objeniz (Sizin konsolunuzdan aldığınız kod!)
         const firebaseConfig = {
             apiKey: "AIzaSyBdD36p6JoUNXM6AzkmFGeskek16MNeF8Y",
             authDomain: "site-d38cf.firebaseapp.com",
             projectId: "site-d38cf",
-            storageBucket: "site-d38cf.appspot.com", // Firebase'den kopyaladığınız değer bu olmalı
+            storageBucket: "site-d38cf.appspot.com", // Bu kısmı Firebase konsolunuzdan doğru değeri aldığınızdan emin olun.
+                                                     // Eğer "site-d38cf.firebaseastorage.app" ise onu kullanın.
             messagingSenderId: "1031674552527",
             appId: "1:1031674552527:web:812c2d6a9ca45a8ac097ba",
-            measurementId: "G-038PPR1ZC5" 
+            measurementId: "G-038PPR1ZC5" // Eğer konsolunuzda bu yoksa, silebilirsiniz.
         };
 
         // Firebase'i başlat
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10/firebase-app.js";
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9/firebase-app.js"; 
         const app = initializeApp(firebaseConfig);
 
-        // Firebase servislerini içe aktar
-        import { getFirestore, collection, addDoc, getDocs, doc, updateDoc, deleteDoc, query, where, getDoc } from "https://www.gstatic.com/firebasejs/10/firebase-firestore.js";
-        import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10/firebase-auth.js";
-        import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/10/firebase-storage.js";
+        // Firebase servislerini içe aktar (v9 modüler SDK URL'leri)
+        import { getFirestore, collection, addDoc, getDocs, doc, updateDoc, deleteDoc, query, where, getDoc } from "https://www.gstatic.com/firebasejs/9/firebase-firestore.js"; 
+        import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/9/firebase-auth.js"; 
+        import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/9/firebase-storage.js"; 
+
+        // Firestore FieldValue'yu ayrıca içe aktarıyoruz çünkü FireStore SDK'sında FieldValue doğrudan yok.
+        // Bu, sunucu zaman damgası gibi özel değerler için gerekli.
+        import { FieldValue } from "https://www.gstatic.com/firebasejs/9/firebase-firestore.js"; 
 
         // Firebase servislerini diğer modüllere aktarmak için global değişkenler
         window.db = getFirestore(app);
         window.auth = getAuth(app);
         window.storage = getStorage(app);
-
-        // Firestore FieldValue'yu da global yapalım (serverTimestamp için gerekli)
-        import { FieldValue } from "https://www.gstatic.com/firebasejs/10/firebase-firestore.js";
         window.firebase = {
             firestore: {
-                FieldValue: FieldValue
+                FieldValue: FieldValue // Firestore.FieldValue'yu doğru şekilde erişilebilir kılıyoruz
             }
         };
     </script>
