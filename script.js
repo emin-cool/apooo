@@ -1,742 +1,1437 @@
-// Local Storage Anahtarları - Artık daha çok yedek veya geçici depolama için kullanılabilir, ana veri bulutta.
-// Ancak bu örnekte Local Storage yerine doğrudan Firebase'e odaklandık.
-const LS_KEYS = {
-    MAIN_COUNTER_START_DATE: 'mainCounterStartDate',
-    IMPORTANT_DATES: 'importantDates',
-    EDA_STORY: 'edaStory',
-    EMIN_STORY: 'eminStory',
-    SELECTED_THEME: 'selectedTheme',
-    BACKGROUND_IMAGE: 'backgroundImage', // Bu artık URL olarak saklanacak
+// Global değişkenlerin tanımlandığını varsayıyoruz (window.db, window.auth, window.storage, window.firebase)
+// Bu değişkenler index.html içindeki <script type="module"> bloğunda tanımlanır.
+
+// --- UI Yönetimi ---
+const UI = {
+    authPage: document.getElementById('authPage'),
+    mainPage: document.getElementById('mainPage'),
+    aboutPage: document.getElementById('aboutPage'),
+    datesPage: document.getElementById('datesPage'),
+    authStatus: document.getElementById('authStatus'),
+    authMessage: document.getElementById('authMessage'),
+    loggedInControls: document.getElementById('loggedInControls'),
+    appFooterControls: document.getElementById('appFooterControls'),
+
+    showSection: function(sectionId) {
+        // Tüm ana bölümleri gizle
+        this.authPage.classList.add('hidden');
+        this.mainPage.classList.add('hidden');
+        this.aboutPage.classList.add('hidden');
+        this.datesPage.classList.add('hidden');
+
+        // İstenen bölümü göster
+        document.getElementById(sectionId).classList.remove('hidden');
+    },
+
+    displayAuthMessage: function(message, isSuccess = false) {
+        this.authMessage.textContent = message;
+        this.authMessage.className = 'auth-message'; // Önceki sınıfları temizle
+        if (isSuccess) {
+            this.authMessage.classList.add('success');
+        } else {
+            this.authMessage.classList.add('error');
+        }
+    },
+
+    clearAuthMessage: function() {
+        this.authMessage.textContent = '';
+        this.authMessage.className = 'auth-message';
+    }
 };
 
-let currentUser = null; // Giriş yapan kullanıcı bilgisi
+// --- Kimlik Doğrulama Yönetimi ---
+const AuthManager = {
+    emailInput: document.getElementById('authEmail'),
+    passwordInput: document.getElementById('authPassword'),
 
-// --- Uygulama Yöneticileri ---
+    signUp: async function() {
+        UI.clearAuthMessage();
+        const email = this.emailInput.value;
+        const password = this.passwordInput.value;
 
-const AuthManager = (() => {
-    const authMessage = document.getElementById('authMessage');
-    const authEmail = document.getElementById('authEmail');
-    const authPassword = document.getElementById('authPassword');
-    const authStatus = document.getElementById('authStatus');
-    const authPage = document.getElementById('authPage');
-    const loggedInControls = document.getElementById('loggedInControls');
-    const appFooterControls = document.getElementById('appFooterControls');
-
-    const showMessage = (msg, type = 'info') => {
-        authMessage.textContent = msg;
-        authMessage.className = `auth-message ${type}`;
-    };
-
-    const signIn = async () => {
-        const email = authEmail.value;
-        const password = authPassword.value;
         if (!email || !password) {
-            showMessage("Lütfen e-posta ve şifrenizi girin.", "error");
+            UI.displayAuthMessage("E-posta ve şifre boş bırakılamaz.");
             return;
         }
-        try {
-            await window.auth.signInWithEmailAndPassword(email, password);
-            showMessage("Giriş başarılı! Yönlendiriliyorsunuz...", "success");
-            // onAuthStateChanged tetiklenecek
-        } catch (error) {
-            console.error("Giriş hatası:", error);
-            showMessage("Giriş başarısız: " + error.message, "error");
-        }
-    };
 
-    const signUp = async () => {
-        const email = authEmail.value;
-        const password = authPassword.value;
-        if (!email || !password) {
-            showMessage("Lütfen e-posta ve şifrenizi girin.", "error");
-            return;
-        }
-        if (password.length < 6) {
-            showMessage("Şifre en az 6 karakter olmalıdır.", "error");
-            return;
-        }
         try {
             await window.auth.createUserWithEmailAndPassword(email, password);
-            showMessage("Kayıt başarılı! Giriş yapılıyor...", "success");
-            // onAuthStateChanged tetiklenecek
+            UI.displayAuthMessage("Kayıt başarılı! Giriş yapılıyor...", true);
+            // Başarılı kayıttan sonra otomatik giriş onAuthStateChanged tarafından halledilecek
         } catch (error) {
             console.error("Kayıt hatası:", error);
-            showMessage("Kayıt başarısız: " + error.message, "error");
+            let errorMessage = "Kayıt sırasında bir hata oluştu.";
+            if (error.code === 'auth/email-already-in-use') {
+                errorMessage = "Bu e-posta adresi zaten kullanılıyor.";
+            } else if (error.code === 'auth/invalid-email') {
+                errorMessage = "Geçersiz e-posta adresi.";
+            } else if (error.code === 'auth/weak-password') {
+                errorMessage = "Şifre en az 6 karakter olmalı.";
+            }
+            UI.displayAuthMessage(errorMessage);
         }
-    };
+    },
 
-    const signOut = async () => {
-        if (!confirm('Çıkış yapmak istediğinizden emin misiniz?')) return;
+    signIn: async function() {
+        UI.clearAuthMessage();
+        const email = this.emailInput.value;
+        const password = this.passwordInput.value;
+
+        if (!email || !password) {
+            UI.displayAuthMessage("E-posta ve şifre boş bırakılamaz.");
+            return;
+        }
+
+        try {
+            await window.auth.signInWithEmailAndPassword(email, password);
+            UI.displayAuthMessage("Giriş başarılı!", true);
+            // Başarılı giriş onAuthStateChanged tarafından halledilecek
+        } catch (error) {
+            console.error("Giriş hatası:", error);
+            let errorMessage = "Giriş sırasında bir hata oluştu.";
+            if (error.code === 'auth/invalid-email' || error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
+                errorMessage = "Yanlış e-posta veya şifre.";
+            }
+            UI.displayAuthMessage(errorMessage);
+        }
+    },
+
+    signOut: async function() {
         try {
             await window.auth.signOut();
-            showMessage("Çıkış yapıldı.", "info");
-            // onAuthStateChanged tetiklenecek
+            console.log("Çıkış yapıldı.");
+            UI.displayAuthMessage("Başarıyla çıkış yaptınız.", true);
+            // onAuthStateChanged tetiklenecek ve arayüzü güncelleyecek
         } catch (error) {
             console.error("Çıkış hatası:", error);
-            alert("Çıkış yapılırken bir sorun oluştu.");
+            UI.displayAuthMessage("Çıkış sırasında bir hata oluştu.");
         }
-    };
+    }
+};
 
-    const handleAuthStateChange = (user) => {
-        currentUser = user;
+
+// --- Kimlik Doğrulama Durumu Değişikliklerini Dinle ---
+// Bu blok, sayfa yüklendiğinde veya kullanıcı giriş/çıkış yaptığında tetiklenir.
+if (window.auth) { // window.auth'un tanımlı olduğundan emin ol
+    window.auth.onAuthStateChanged(user => {
         if (user) {
-            authPage.classList.add('hidden');
-            document.getElementById('mainPage').classList.remove('hidden');
-            loggedInControls.classList.remove('hidden');
-            appFooterControls.classList.remove('hidden');
-            authStatus.textContent = `Hoş geldiniz, ${user.email}!`;
-            UI.showSection('mainPage'); // Kullanıcı girişi sonrası ana sayfayı göster
+            console.log("Kullanıcı giriş yaptı:", user.uid);
+            UI.authStatus.textContent = `Hoş geldin, ${user.email}!`;
+            UI.authPage.classList.add('hidden');
+            UI.mainPage.classList.remove('hidden');
+            UI.loggedInControls.classList.remove('hidden');
+            UI.appFooterControls.classList.remove('hidden');
             
             // Kullanıcıya özel verileri yükle
-            Counter.loadMainStartDate();
-            ThemeManager.loadUserPreferences();
-            ThemeManager.loadBackgroundImage(); // Kullanıcıya özel arka planı yükle
+            Counter.loadMainDate(user.uid);
+            StoryManager.loadStory('eda', user.uid);
+            StoryManager.loadStory('emin', user.uid);
+            DateManager.loadImportantDates(user.uid);
+            ThemeManager.loadUserTheme(user.uid);
+            ThemeManager.loadUserBackground(user.uid);
+
         } else {
-            authPage.classList.remove('hidden');
-            document.getElementById('mainPage').classList.add('hidden');
-            loggedInControls.classList.add('hidden');
-            appFooterControls.classList.add('hidden');
-            authStatus.textContent = 'Giriş yapın veya kayıt olun.';
-            UI.hideAllSections(); // Tüm uygulama bölümlerini gizle
+            console.log("Kullanıcı çıkış yaptı veya giriş yapmadı.");
+            UI.authStatus.textContent = "Lütfen giriş yapın veya kayıt olun.";
+            UI.authPage.classList.remove('hidden');
+            UI.mainPage.classList.add('hidden');
+            UI.aboutPage.classList.add('hidden'); // Diğer sayfaları da gizle
+            UI.datesPage.classList.add('hidden'); // Diğer sayfaları da gizle
+            UI.loggedInControls.classList.add('hidden');
+            UI.appFooterControls.classList.add('hidden');
+            UI.clearAuthMessage();
+            // Varsayılan temaya dön veya boş tema ayarla
+            document.body.className = ''; 
+            document.body.style.backgroundImage = '';
+            document.body.style.backgroundColor = '';
         }
-    };
-
-    // Firebase kimlik doğrulama durumunu dinle
-    window.auth.onAuthStateChanged(handleAuthStateChange);
-
-    return {
-        signIn,
-        signUp,
-        signOut,
-        getCurrentUser: () => currentUser
-    };
-})();
+    });
+} else {
+    console.error("Firebase Auth başlatılamadı. AuthManager çalışmayacak.");
+    UI.displayAuthMessage("Uygulama başlatılamadı. Lütfen konsolu kontrol edin.", false);
+}
 
 
-const Counter = (() => {
-    let mainStartDate = new Date('2025-03-01T00:00:00'); // Varsayılan tarih
-
-    const updateMainCounter = () => {
-        if (!AuthManager.getCurrentUser()) {
-            document.getElementById('mainCounterTitle').textContent = `Giriş Yapın`;
-            document.getElementById('years').textContent = 0;
-            document.getElementById('months').textContent = 0;
-            document.getElementById('days').textContent = 0;
-            document.getElementById('hours').textContent = 0;
-            document.getElementById('minutes').textContent = 0;
-            document.getElementById('seconds').textContent = 0;
-            return;
-        }
-
-        const now = new Date();
-        const diffTime = now.getTime() - mainStartDate.getTime();
-
-        if (diffTime < 0) {
-            document.getElementById('mainCounterTitle').textContent = `Belirtilen Tarihe Kalan Süre:`;
-            const remainingDiff = Math.abs(diffTime);
-            const rSeconds = Math.floor((remainingDiff / 1000) % 60);
-            const rMinutes = Math.floor((remainingDiff / (1000 * 60)) % 60);
-            const rHours = Math.floor((remainingDiff / (1000 * 60 * 60)) % 24);
-            const rDays = Math.floor(remainingDiff / (1000 * 60 * 60 * 24));
-            
-            document.getElementById('years').textContent = Math.floor(rDays / 365);
-            document.getElementById('months').textContent = Math.floor((rDays % 365) / 30); // Yaklaşık ay
-            document.getElementById('days').textContent = rDays % 30; // Kalan günler
-            document.getElementById('hours').textContent = rHours;
-            document.getElementById('minutes').textContent = rMinutes;
-            document.getElementById('seconds').textContent = rSeconds;
-            return;
-        }
-
-        let years = now.getFullYear() - mainStartDate.getFullYear();
-        let months = now.getMonth() - mainStartDate.getMonth();
-        let days = now.getDate() - mainStartDate.getDate();
-        let hours = now.getHours() - mainStartDate.getHours();
-        let minutes = now.getMinutes() - mainStartDate.getMinutes();
-        let seconds = now.getSeconds() - mainStartDate.getSeconds();
-
-        if (seconds < 0) { seconds += 60; minutes--; }
-        if (minutes < 0) { minutes += 60; hours--; }
-        if (hours < 0) { hours += 24; days--; }
-        if (days < 0) {
-            const prevMonth = new Date(now.getFullYear(), now.getMonth(), 0);
-            days += prevMonth.getDate();
-            months--;
-        }
-        if (months < 0) { months += 12; years--; }
-
-        document.getElementById('mainCounterTitle').textContent = `${mainStartDate.toLocaleDateString('tr-TR')} Tarihinden Bu Yana`;
-        document.getElementById('years').textContent = years;
-        document.getElementById('months').textContent = months;
-        document.getElementById('days').textContent = days;
-        document.getElementById('hours').textContent = hours;
-        document.getElementById('minutes').textContent = minutes;
-        document.getElementById('seconds').textContent = seconds;
-    };
-
-    const loadMainStartDate = async () => {
-        const user = AuthManager.getCurrentUser();
-        if (!user) return;
-
+// --- Sayaç Yönetimi ---
+const Counter = {
+    mainDateInput: document.getElementById('mainDateInput'),
+    mainCounterTitle: document.getElementById('mainCounterTitle'),
+    timerInterval: null,
+    
+    // Ana sayacı ve başlangıç tarihini yükler
+    loadMainDate: async function(userId) {
         try {
-            const docRef = window.db.collection('users').doc(user.uid);
+            const docRef = window.db.collection('users').doc(userId);
             const docSnap = await docRef.get();
-            if (docSnap.exists() && docSnap.data().mainStartDate) {
-                mainStartDate = new Date(docSnap.data().mainStartDate);
-                document.getElementById('mainDateInput').value = mainStartDate.toISOString().split('T')[0];
+
+            if (docSnap.exists && docSnap.data().mainDate) {
+                const mainDate = docSnap.data().mainDate.toDate(); // Timestamp'ten Date objesine çevir
+                this.mainDateInput.valueAsDate = mainDate;
+                this.startCounter(mainDate);
+                this.updateMainCounterTitle(mainDate);
             } else {
-                // Varsayılan tarihi Firebase'e kaydet (sadece bir kez)
-                const defaultDateISO = mainStartDate.toISOString();
-                await docRef.set({ mainStartDate: defaultDateISO }, { merge: true });
-                document.getElementById('mainDateInput').value = defaultDateISO.split('T')[0];
+                console.log("Ana tarih bulunamadı, varsayılanı ayarla.");
+                const defaultDate = new Date(); // Bugünün tarihi
+                this.mainDateInput.valueAsDate = defaultDate;
+                this.startCounter(defaultDate);
+                this.updateMainCounterTitle(defaultDate);
             }
-        } catch (e) {
-            console.error("Başlangıç tarihi yüklenirken hata:", e);
-            alert("Başlangıç tarihi yüklenirken bir sorun oluştu.");
+        } catch (error) {
+            console.error("Ana tarih yüklenirken hata:", error);
         }
-        updateMainCounter();
-    };
+    },
 
-    const setMainStartDate = async (event) => {
-        const user = AuthManager.getCurrentUser();
-        if (!user) return;
-
-        const newDate = event.target.value;
-        if (newDate) {
-            mainStartDate = new Date(`${newDate}T00:00:00`);
-            try {
-                await window.db.collection('users').doc(user.uid).set({ mainStartDate: mainStartDate.toISOString() }, { merge: true });
-                updateMainCounter();
-                alert('Başlangıç tarihi kaydedildi! ✅');
-            } catch (e) {
-                console.error("Başlangıç tarihi kaydedilirken hata:", e);
-                alert("Başlangıç tarihi kaydedilirken bir sorun oluştu.");
-            }
-        }
-    };
-
-    // Her saniye güncellemeyi başlat
-    setInterval(updateMainCounter, 1000);
-
-    return {
-        loadMainStartDate,
-        setMainStartDate,
-        updateMainCounter
-    };
-})();
-
-
-const StoryManager = (() => {
-    const loadStory = async (person) => {
-        const user = AuthManager.getCurrentUser();
-        if (!user) {
-            document.getElementById(`${person}Story`).innerHTML = `<p style="text-align: center; opacity: 0.7; font-style: italic;">Giriş yapın ve kendi hikayenizi görün.</p>`;
-            return;
-        }
-        
-        const storyElement = document.getElementById(`${person}Story`);
-        storyElement.innerHTML = `<p style="text-align: center; opacity: 0.7; font-style: italic;">Yükleniyor...</p>`;
-
+    // Ana tarihi günceller ve Firestore'a kaydeder
+    saveMainDate: async function(date, userId) {
         try {
-            const docRef = window.db.collection('users').doc(user.uid);
-            const docSnap = await docRef.get();
-            let storyText = null;
-            if (docSnap.exists() && docSnap.data()[`${person}Story`]) {
-                storyText = docSnap.data()[`${person}Story`];
-            }
-
-            if (storyText) {
-                storyElement.innerHTML = `<p>${storyText.replace(/\n/g, '</p><p>')}</p>`;
-            } else {
-                storyElement.innerHTML = `<p style="text-align: center; opacity: 0.7; font-style: italic;">${person === 'eda' ? 'Eda' : 'Emin'} henüz hikayesini yazmamış...</p>`;
-            }
-            document.getElementById(`${person}Textarea`).value = storyText || ''; // Textarea'yı da doldur
-        } catch (e) {
-            console.error(`Hikaye (${person}) yüklenirken hata:`, e);
-            storyElement.innerHTML = `<p style="text-align: center; color: var(--error-color);">Hikaye yüklenirken bir hata oluştu.</p>`;
+            const docRef = window.db.collection('users').doc(userId);
+            await docRef.set({ mainDate: date }, { merge: true }); // Sadece mainDate'i güncelleyin
+            console.log("Ana tarih kaydedildi.");
+        } catch (error) {
+            console.error("Ana tarih kaydedilirken hata:", error);
         }
-    };
+    },
 
-    const saveStory = async (person) => {
-        const user = AuthManager.getCurrentUser();
-        if (!user) {
-            alert("Lütfen önce giriş yapın.");
-            return;
+    // Başlangıç tarihini inputtan alıp sayacı başlatır
+    startCounter: function(startDate) {
+        if (this.timerInterval) {
+            clearInterval(this.timerInterval);
         }
 
-        const textarea = document.getElementById(`${person}Textarea`);
-        const story = textarea.value.trim();
+        this.updateMainCounterTitle(startDate);
 
-        if (story) {
-            try {
-                await window.db.collection('users').doc(user.uid).set({ [`${person}Story`]: story }, { merge: true });
-                loadStory(person); // Hikayeyi ekranda güncelle
-                alert(`✨ ${person === 'eda' ? 'Eda\'nın' : 'Emin\'in'} hikayesi kaydedildi!`);
-            } catch (e) {
-                console.error(`Hikaye (${person}) kaydedilirken hata:`, e);
-                alert("Hikaye kaydedilirken bir sorun oluştu.");
+        this.timerInterval = setInterval(() => {
+            const now = new Date();
+            const diff = now.getTime() - startDate.getTime(); // Fark milisaniye cinsinden
+
+            if (diff < 0) { // Gelecek bir tarih seçilirse
+                document.getElementById('years').textContent = "0";
+                document.getElementById('months').textContent = "0";
+                document.getElementById('days').textContent = "0";
+                document.getElementById('hours').textContent = "0";
+                document.getElementById('minutes').textContent = "0";
+                document.getElementById('seconds').textContent = "0";
+                this.mainCounterTitle.textContent = "Henüz başlamadı...";
+                return;
             }
+
+            const seconds = Math.floor(diff / 1000);
+            const minutes = Math.floor(seconds / 60);
+            const hours = Math.floor(minutes / 60);
+            const days = Math.floor(hours / 24);
+
+            // Daha doğru yıl ve ay hesaplaması
+            let years = 0;
+            let months = 0;
+            let tempDate = new Date(startDate);
+            let totalMonths = 0;
+
+            while (tempDate < now) {
+                tempDate.setMonth(tempDate.getMonth() + 1);
+                if (tempDate <= now) {
+                    totalMonths++;
+                } else {
+                    tempDate.setMonth(tempDate.getMonth() - 1); // Geri al
+                    break;
+                }
+            }
+
+            years = Math.floor(totalMonths / 12);
+            months = totalMonths % 12;
+
+            // Kalan gün, saat, dakika, saniye
+            const remainingDays = days - (years * 365 + Math.floor(years / 4)); // Kaba bir tahmin, tam doğru değil
+            const remainingHours = hours % 24;
+            const remainingMinutes = minutes % 60;
+            const remainingSeconds = seconds % 60;
+
+            document.getElementById('years').textContent = years;
+            document.getElementById('months').textContent = months;
+            document.getElementById('days').textContent = remainingDays < 0 ? 0 : remainingDays; // Negatif olmaması için
+            document.getElementById('hours').textContent = remainingHours;
+            document.getElementById('minutes').textContent = remainingMinutes;
+            document.getElementById('seconds').textContent = remainingSeconds;
+
+        }, 1000);
+    },
+
+    updateMainCounterTitle: function(date) {
+        const today = new Date();
+        const diffDays = Math.floor((today.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
+        if (diffDays >= 0) {
+             this.mainCounterTitle.textContent = `${date.toLocaleDateString()} tarihinden beri geçen süre`;
         } else {
-            alert('Lütfen boş bir hikaye kaydetmeyin.');
+            this.mainCounterTitle.textContent = `${date.toLocaleDateString()} tarihine kalan süre`;
         }
-    };
+       
+    }
+};
 
-    return {
-        loadStory,
-        saveStory
-    };
-})();
+// Ana tarih inputu değiştiğinde
+document.getElementById('mainDateInput').addEventListener('change', async function() {
+    const selectedDate = this.valueAsDate;
+    if (selectedDate && window.auth.currentUser) {
+        Counter.startCounter(selectedDate);
+        Counter.saveMainDate(selectedDate, window.auth.currentUser.uid);
+    }
+});
 
 
-const DateManager = (() => {
-    let importantDates = []; // Array to hold important date objects from Firestore
-
-    const calculateTimeDifference = (targetDate) => {
-        const now = new Date();
-        const target = new Date(targetDate);
-        const diffMs = target.getTime() - now.getTime();
-
-        if (isNaN(diffMs)) {
-            return "Geçersiz Tarih";
-        }
-
-        const isPast = diffMs < 0;
-        let absDiffMs = Math.abs(diffMs);
-
-        const minutes = Math.floor((absDiffMs / (1000 * 60)) % 60);
-        const hours = Math.floor((absDiffMs / (1000 * 60 * 60)) % 24);
-        const days = Math.floor(absDiffMs / (1000 * 60 * 60 * 24));
-
-        let result = [];
-        if (days > 0) result.push(`${days} gün`);
-        if (hours > 0) result.push(`${hours} saat`);
-        if (minutes > 0 || (days === 0 && hours === 0 && minutes === 0 && !isPast)) result.push(`${minutes} dakika`); 
-        
-        if (result.length === 0) {
-            return `0 dakika ${isPast ? 'geçti' : 'kaldı'}`;
-        }
-        return `${result.join(', ')} ${isPast ? 'geçti' : 'kaldı'}`;
-    };
-
-    const loadImportantDates = async () => {
-        const user = AuthManager.getCurrentUser();
-        if (!user) {
-            document.getElementById('importantDatesList').innerHTML = '<p style="text-align: center; opacity: 0.7;">Giriş yapın ve önemli tarihlerinizi görün.</p>';
+// --- Hikaye Yönetimi ---
+const StoryManager = {
+    saveStory: async function(person) {
+        if (!window.auth.currentUser) {
+            console.error("Kullanıcı girişi yapılmamış.");
             return;
         }
-
-        const listContainer = document.getElementById('importantDatesList');
-        listContainer.innerHTML = '<p style="text-align: center; opacity: 0.7;">Yükleniyor...</p>';
+        const userId = window.auth.currentUser.uid;
+        const textareaId = `${person}Textarea`;
+        const storyText = document.getElementById(textareaId).value;
 
         try {
-            const q = window.db.collection('importantDates').where("userId", "==", user.uid);
-            const querySnapshot = await q.get();
-            importantDates = [];
-            querySnapshot.forEach((doc) => {
-                importantDates.push({ id: doc.id, ...doc.data() });
-            });
-            updateImportantDatesList();
-        } catch (e) {
-            console.error("Önemli tarihler yüklenirken hata oluştu:", e);
-            listContainer.innerHTML = '<p style="text-align: center; color: var(--error-color);">Önemli tarihler yüklenirken bir sorun oluştu.</p>';
+            const docRef = window.db.collection('users').doc(userId);
+            // Sadece ilgili hikaye alanını güncelle
+            const updateData = {};
+            updateData[`story.${person}`] = storyText;
+            await docRef.set(updateData, { merge: true });
+            console.log(`${person} hikayesi kaydedildi.`);
+            UI.displayAuthMessage(`${person} hikayesi başarıyla kaydedildi!`, true);
+            // Hikayeyi hemen güncellenen değeriyle göster
+            document.getElementById(`${person}Story`).innerHTML = StoryManager.formatStoryText(storyText);
+        } catch (error) {
+            console.error(`${person} hikayesi kaydedilirken hata:`, error);
+            UI.displayAuthMessage(`${person} hikayesi kaydedilirken hata oluştu.`, false);
         }
-    };
+    },
 
-    const addImportantDate = async () => {
-        const user = AuthManager.getCurrentUser();
-        if (!user) {
-            alert("Lütfen önce giriş yapın.");
+    loadStory: async function(person, userId) {
+        try {
+            const docRef = window.db.collection('users').doc(userId);
+            const docSnap = await docRef.get();
+            const storyDiv = document.getElementById(`${person}Story`);
+            const textarea = document.getElementById(`${person}Textarea`);
+
+            if (docSnap.exists && docSnap.data().story && docSnap.data().story[person]) {
+                const storyText = docSnap.data().story[person];
+                storyDiv.innerHTML = this.formatStoryText(storyText);
+                textarea.value = storyText;
+            } else {
+                storyDiv.innerHTML = `<p>Henüz bir hikaye yazılmamış. İlk hikayeni sen yaz!</p>`;
+                textarea.value = '';
+            }
+        } catch (error) {
+            console.error(`${person} hikayesi yüklenirken hata:`, error);
+            document.getElementById(`${person}Story`).innerHTML = `<p class="error">Hikaye yüklenirken hata oluştu.</p>`;
+        }
+    },
+
+    // Metinleri <p> etiketlerine bölerek formatlar
+    formatStoryText: function(text) {
+        if (!text) return '<p>Henüz bir hikaye yazılmamış.</p>';
+        return text.split('\n\n').map(p => `<p>${p.replace(/\n/g, '<br>')}</p>`).join('');
+    }
+};
+
+// --- Önemli Tarihler Yönetimi ---
+const DateManager = {
+    descriptionInput: document.getElementById('dateDescription'),
+    dateInput: document.getElementById('dateInput'),
+    mediaInput: document.getElementById('mediaInput'),
+    importantDatesList: document.getElementById('importantDatesList'),
+    imagePreview: document.getElementById('imagePreview'),
+    videoPreview: document.getElementById('videoPreview'),
+    mediaPreviewContainer: document.getElementById('mediaPreviewContainer'),
+
+    addImportantDate: async function() {
+        if (!window.auth.currentUser) {
+            console.error("Kullanıcı girişi yapılmamış.");
             return;
         }
-
-        const description = document.getElementById('dateDescription').value.trim();
-        const date = document.getElementById('dateInput').value;
-        const mediaFile = document.getElementById('mediaInput').files[0];
+        const userId = window.auth.currentUser.uid;
+        const description = this.descriptionInput.value;
+        const date = this.dateInput.valueAsDate;
+        const file = this.mediaInput.files[0];
 
         if (!description || !date) {
-            alert('Lütfen açıklama ve tarih girin!');
+            UI.displayAuthMessage("Açıklama ve tarih boş bırakılamaz.", false);
             return;
         }
+        UI.clearAuthMessage();
 
-        let mediaData = null;
-        if (mediaFile) {
-            const storageRef = window.storage.ref(`user_media/${user.uid}/${Date.now()}_${mediaFile.name}`);
+        let mediaUrl = null;
+        let mediaType = null;
+
+        if (file) {
+            UI.displayAuthMessage("Medya yükleniyor...", true);
             try {
-                const snapshot = await storageRef.put(mediaFile);
-                mediaData = {
-                    type: mediaFile.type.startsWith('image/') ? 'image' : 'video',
-                    url: await snapshot.ref.getDownloadURL()
-                };
+                // Firebase Storage'a yükleme işlemi
+                const storageRef = window.storage.ref(window.storage, `user_uploads/${userId}/${Date.now()}_${file.name}`);
+                const snapshot = await window.storage.uploadBytes(storageRef, file);
+                mediaUrl = await window.storage.getDownloadURL(snapshot.ref);
+                mediaType = file.type.startsWith('image/') ? 'image' : 'video';
+                UI.displayAuthMessage("Medya başarıyla yüklendi.", true);
             } catch (error) {
-                console.error("Medya yüklenirken hata:", error);
-                alert("Medya dosyası yüklenirken bir sorun oluştu.");
+                console.error("Medya yükleme hatası:", error);
+                UI.displayAuthMessage("Medya yüklenirken hata oluştu.", false);
                 return;
             }
         }
 
-        const newDateObj = {
-            description: description,
-            date: date,
-            media: mediaData,
-            userId: user.uid,
-            createdAt: window.firebase.firestore.FieldValue.serverTimestamp() // Firestore'un kendi zaman damgası
-        };
-
         try {
-            const docRef = await window.db.collection("importantDates").add(newDateObj);
-            importantDates.push({ id: docRef.id, ...newDateObj });
-            updateImportantDatesList();
-            clearForm();
-            alert('Tarih başarıyla buluta eklendi! 🎉');
-        } catch (e) {
-            console.error("Tarih eklenirken hata:", e);
-            alert("Tarih eklenirken bir sorun oluştu.");
+            await window.db.collection('users').doc(userId).collection('importantDates').add({
+                description: description,
+                date: date,
+                mediaUrl: mediaUrl,
+                mediaType: mediaType,
+                createdAt: new Date() // Server timestamp yerine doğrudan JavaScript Date objesi kullanıyoruz
+            });
+            console.log("Önemli tarih eklendi.");
+            UI.displayAuthMessage("Önemli tarih başarıyla eklendi!", true);
+            this.clearDateForm();
+            this.loadImportantDates(userId); // Listeyi yeniden yükle
+        } catch (error) {
+            console.error("Tarih eklenirken hata:", error);
+            UI.displayAuthMessage("Tarih eklenirken hata oluştu.", false);
         }
-    };
+    },
 
-    const deleteImportantDate = async (docId, mediaUrl) => {
-        const user = AuthManager.getCurrentUser();
-        if (!user || !confirm('Bu önemli tarihi silmek istediğinizden emin misiniz?')) {
-            return;
-        }
+    loadImportantDates: async function(userId) {
+        this.importantDatesList.innerHTML = '<p style="text-align: center; opacity: 0.7;">Yükleniyor...</p>';
         try {
-            await window.db.collection("importantDates").doc(docId).delete();
-            if (mediaUrl) {
-                // Storage'daki dosyayı da sil
-                const fileRef = window.storage.refFromURL(mediaUrl);
-                await fileRef.delete();
+            const querySnapshot = await window.db.collection('users').doc(userId).collection('importantDates').orderBy('date', 'desc').get();
+            this.importantDatesList.innerHTML = ''; // Temizle
+            if (querySnapshot.empty) {
+                this.importantDatesList.innerHTML = '<p style="text-align: center;">Henüz önemli bir tarih eklenmemiş. Haydi bir tane ekle!</p>';
+                return;
             }
-            importantDates = importantDates.filter(date => date.id !== docId);
-            updateImportantDatesList();
-            alert('Tarih başarıyla silindi. 🗑️');
-        } catch (e) {
-            console.error("Tarih silinirken hata:", e);
-            alert("Tarih silinirken bir sorun oluştu.");
+
+            querySnapshot.forEach(doc => {
+                const data = doc.data();
+                const dateObj = data.date ? data.date.toDate() : null; // Timestamp'i Date objesine çevir
+                const dateString = dateObj ? dateObj.toLocaleDateString('tr-TR', { year: 'numeric', month: 'long', day: 'numeric' }) : 'Tarih belirtilmemiş';
+                
+                let mediaHtml = '';
+                if (data.mediaUrl && data.mediaType) {
+                    if (data.mediaType === 'image') {
+                        mediaHtml = `<div class="date-media"><img src="${data.mediaUrl}" alt="${data.description}"></div>`;
+                    } else if (data.mediaType === 'video') {
+                        mediaHtml = `<div class="date-media"><video controls src="${data.mediaUrl}"></video></div>`;
+                    }
+                }
+
+                // Tarihe kalan/geçen süreyi hesapla
+                const now = new Date();
+                let diffText = '';
+                if (dateObj) {
+                    const diffMs = now.getTime() - dateObj.getTime();
+                    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+                    if (diffDays === 0) {
+                        diffText = "Bugün!";
+                    } else if (diffDays > 0) {
+                        diffText = `${diffDays} gün önce`;
+                    } else { // Gelecekteki tarih
+                        diffText = `${Math.abs(diffDays)} gün sonra`;
+                    }
+                }
+
+                this.importantDatesList.innerHTML += `
+                    <div class="date-item" data-id="${doc.id}" data-media-url="${data.mediaUrl || ''}">
+                        <div class="date-title">${data.description}</div>
+                        <div class="date-display">${dateString}</div>
+                        ${mediaHtml}
+                        <div class="date-counter">${diffText}</div>
+                        <button class="delete-btn" onclick="DateManager.deleteImportantDate('${doc.id}', '${data.mediaUrl || ''}')">Sil</button>
+                    </div>
+                `;
+            });
+        } catch (error) {
+            console.error("Önemli tarihler yüklenirken hata:", error);
+            this.importantDatesList.innerHTML = '<p class="error">Tarihler yüklenirken hata oluştu.</p>';
         }
-    };
+    },
 
-    const updateImportantDatesList = () => {
-        const listContainer = document.getElementById('importantDatesList');
-        listContainer.innerHTML = '';
+    deleteImportantDate: async function(docId, mediaUrl) {
+        if (!window.auth.currentUser) {
+            console.error("Kullanıcı girişi yapılmamış.");
+            return;
+        }
+        const userId = window.auth.currentUser.uid;
+        if (confirm("Bu tarihi silmek istediğinizden emin misiniz?")) {
+            try {
+                // Medya dosyasını Storage'dan sil (varsa)
+                if (mediaUrl) {
+                    const fileRef = window.storage.ref(window.storage, mediaUrl);
+                    await window.storage.deleteObject(fileRef).catch(e => {
+                        if (e.code === 'storage/object-not-found') {
+                            console.log("Silinecek eski arka plan dosyası bulunamadı, sorun değil.");
+                        } else {
+                            throw e; // Başka bir hata varsa tekrar fırlat
+                        }
+                    });
+                    console.log("Medya dosyası silindi (varsa).");
+                }
 
-        if (importantDates.length === 0) {
-            listContainer.innerHTML = '<p style="text-align: center; opacity: 0.7;">Henüz önemli tarih eklenmemiş.</p>';
+                // Firestore dokümanını sil
+                await window.db.collection('users').doc(userId).collection('importantDates').doc(docId).delete();
+                console.log("Tarih silindi.");
+                UI.displayAuthMessage("Tarih başarıyla silindi.", true);
+                this.loadImportantDates(userId); // Listeyi yeniden yükle
+            } catch (error) {
+                console.error("Tarih silinirken hata:", error);
+                UI.displayAuthMessage("Tarih silinirken hata oluştu.", false);
+            }
+        }
+    },
+
+    clearDateForm: function() {
+        this.descriptionInput.value = '';
+        this.dateInput.value = '';
+        this.mediaInput.value = ''; // File inputu temizle
+        this.imagePreview.style.display = 'none';
+        this.imagePreview.src = '#';
+        this.videoPreview.style.display = 'none';
+        this.videoPreview.src = '#';
+        this.mediaPreviewContainer.style.display = 'none';
+    }
+};
+
+// Medya önizlemesi için event listener
+document.getElementById('mediaInput').addEventListener('change', function(event) {
+    const file = event.target.files[0];
+    if (file) {
+        const fileType = file.type;
+        const reader = new FileReader();
+
+        reader.onload = function(e) {
+            DateManager.mediaPreviewContainer.style.display = 'block';
+            if (fileType.startsWith('image/')) {
+                DateManager.imagePreview.src = e.target.result;
+                DateManager.imagePreview.style.display = 'block';
+                DateManager.videoPreview.style.display = 'none';
+            } else if (fileType.startsWith('video/')) {
+                DateManager.videoPreview.src = e.target.result;
+                DateManager.videoPreview.style.display = 'block';
+                DateManager.imagePreview.style.display = 'none';
+            }
+        };
+        reader.readAsDataURL(file);
+    } else {
+        DateManager.mediaPreviewContainer.style.display = 'none';
+        DateManager.imagePreview.src = '#';
+        DateManager.videoPreview.src = '#';
+        DateManager.imagePreview.style.display = 'none';
+        DateManager.videoPreview.style.display = 'none';
+    }
+});
+
+
+// --- Tema ve Arka Plan Yönetimi ---
+const ThemeManager = {
+    customizationPanel: document.getElementById('customizationPanel'),
+    overlay: document.getElementById('overlay'),
+    themeOptions: document.querySelectorAll('.theme-option'),
+    backgroundInput: document.getElementById('backgroundInput'),
+    bgPreview: document.getElementById('bgPreview'),
+
+    openCustomizationPanel: function() {
+        this.customizationPanel.classList.add('show');
+        this.overlay.classList.add('show');
+        this.updateThemeActiveStates();
+        this.updateBackgroundPreview();
+    },
+
+    closeCustomizationPanel: function() {
+        this.customizationPanel.classList.remove('show');
+        this.overlay.classList.remove('show');
+    },
+
+    applyTheme: function(themeName) {
+        document.body.className = `theme-${themeName}`; // 'theme-' önekini ekliyoruz
+        if (window.auth.currentUser) {
+            this.saveUserTheme(themeName, window.auth.currentUser.uid);
+        }
+        this.updateThemeActiveStates();
+    },
+
+    saveUserTheme: async function(themeName, userId) {
+        try {
+            const docRef = window.db.collection('users').doc(userId);
+            await docRef.set({ theme: themeName }, { merge: true });
+            console.log("Tema kaydedildi:", themeName);
+        } catch (error) {
+            console.error("Tema kaydedilirken hata:", error);
+        }
+    },
+
+    loadUserTheme: async function(userId) {
+        try {
+            const docRef = window.db.collection('users').doc(userId);
+            const docSnap = await docRef.get();
+            if (docSnap.exists && docSnap.data().theme) {
+                const savedTheme = docSnap.data().theme;
+                document.body.className = `theme-${savedTheme}`;
+                console.log("Tema yüklendi:", savedTheme);
+            } else {
+                console.log("Kullanıcı teması bulunamadı, varsayılan tema uygulanıyor.");
+                document.body.className = `theme-dark`; // Varsayılan tema
+            }
+            this.updateThemeActiveStates();
+        } catch (error) {
+            console.error("Tema yüklenirken hata:", error);
+        }
+    },
+
+    updateThemeActiveStates: function() {
+        this.themeOptions.forEach(option => {
+            option.classList.remove('active');
+            if (document.body.classList.contains(option.dataset.theme)) {
+                option.classList.add('active');
+            }
+        });
+    },
+
+    uploadBackground: async function(file) {
+        if (!window.auth.currentUser) {
+            console.error("Kullanıcı girişi yapılmamış.");
+            return;
+        }
+        const userId = window.auth.currentUser.uid;
+        if (!file) {
+            console.log("Dosya seçilmedi.");
             return;
         }
 
-        const sortedDates = [...importantDates].sort((a, b) => {
-            const dateA = new Date(a.date);
-            const dateB = new Date(b.date);
-            const now = new Date();
+        UI.displayAuthMessage("Arka plan yükleniyor...", true);
+        try {
+            const storageRef = window.storage.ref(window.storage, `user_backgrounds/${userId}/custom_background`);
+            const snapshot = await window.storage.uploadBytes(storageRef, file);
+            const imageUrl = await window.storage.getDownloadURL(snapshot.ref);
+            
+            document.body.style.backgroundImage = `url('${imageUrl}')`;
+            document.body.style.backgroundSize = 'cover';
+            document.body.style.backgroundPosition = 'center';
+            document.body.style.backgroundAttachment = 'fixed'; // Eklemeyi unutmayın
+            
+            this.saveUserBackgroundUrl(imageUrl, userId);
+            this.updateBackgroundPreview(imageUrl);
+            UI.displayAuthMessage("Arka plan başarıyla yüklendi!", true);
+        } catch (error) {
+            console.error("Arka plan yükleme hatası:", error);
+            UI.displayAuthMessage("Arka plan yüklenirken hata oluştu.", false);
+        }
+    },
 
-            const diffA = dateA.getTime() - now.getTime();
-            const diffB = dateB.getTime() - now.getTime();
-
-            if (diffA >= 0 && diffB >= 0) { return diffA - diffB; }
-            if (diffA < 0 && diffB < 0) { return diffB - diffA; }
-            return diffB - diffA;
-        });
-
-        sortedDates.forEach(dateItem => {
-            const dateElement = document.createElement('div');
-            dateElement.className = 'date-item';
-
-            const formattedDate = new Date(dateItem.date).toLocaleDateString('tr-TR', {
-                weekday: 'long',
-                year: 'numeric',
-                month: 'long',
-                day: 'numeric'
+    removeBackground: async function() {
+        if (!window.auth.currentUser) {
+            console.error("Kullanıcı girişi yapılmamış.");
+            return;
+        }
+        const userId = window.auth.currentUser.uid;
+        
+        try {
+            // Firestore'daki URL'yi kaldır
+            const docRef = window.db.collection('users').doc(userId);
+            // FieldValue.delete() import edildiği için doğrudan kullanılabilir
+            await docRef.set({ backgroundUrl: window.firebase.firestore.FieldValue.delete() }, { merge: true });
+            
+            // Storage'dan dosyayı sil (eğer daha önce yüklenmişse)
+            // Bu kısım biraz karmaşık olabilir çünkü dosyanın tam yolunu bilmemiz gerekiyor.
+            // Örnek: user_backgrounds/userId/custom_background
+            const fileRef = window.storage.ref(window.storage, `user_backgrounds/${userId}/custom_background`);
+            // Dosya yoksa hata vermemesi için catch bloğu ekledik.
+            await window.storage.deleteObject(fileRef).catch(e => {
+                if (e.code === 'storage/object-not-found') {
+                    console.log("Silinecek eski arka plan dosyası bulunamadı, sorun değil.");
+                } else {
+                    throw e; // Başka bir hata varsa tekrar fırlat
+                }
             });
 
-            let mediaHtml = '';
-            const mediaUrl = dateItem.media?.url || null; // Accessing nested property safely
-            if (mediaUrl) {
-                if (dateItem.media.type === 'image') {
-                    mediaHtml = `<div class="date-media"><img src="${mediaUrl}" alt="Önemli An"></div>`;
-                } else if (dateItem.media.type === 'video') {
-                    mediaHtml = `<div class="date-media"><video src="${mediaUrl}" controls></video></div>`;
-                }
-            }
-
-            dateElement.innerHTML = `
-                <div class="date-title">${dateItem.description}</div>
-                <div class="date-display">${formattedDate}</div>
-                ${mediaHtml}
-                <div class="date-counter">${calculateTimeDifference(dateItem.date)}</div>
-                <button class="delete-btn" onclick="DateManager.deleteImportantDate('${dateItem.id}', '${mediaUrl || ''}')">🗑️ Sil</button>
-            `;
-
-            listContainer.appendChild(dateElement);
-        });
-    };
-
-    const clearForm = () => {
-        document.getElementById('dateDescription').value = '';
-        document.getElementById('dateInput').value = '';
-        document.getElementById('mediaInput').value = '';
-        document.getElementById('imagePreview').style.display = 'none';
-        document.getElementById('videoPreview').style.display = 'none';
-        document.getElementById('imagePreview').src = '';
-        document.getElementById('videoPreview').src = '';
-    };
-
-    const setupMediaPreview = () => {
-        document.getElementById('mediaInput').addEventListener('change', function(event) {
-            const file = event.target.files[0];
-            const imagePreview = document.getElementById('imagePreview');
-            const videoPreview = document.getElementById('videoPreview');
-
-            imagePreview.style.display = 'none';
-            videoPreview.style.display = 'none';
-            imagePreview.src = '';
-            videoPreview.src = '';
-
-            if (file) {
-                const reader = new FileReader();
-                reader.onload = function(e) {
-                    if (file.type.startsWith('image/')) {
-                        imagePreview.src = e.target.result;
-                        imagePreview.style.display = 'block';
-                    } else if (file.type.startsWith('video/')) {
-                        videoPreview.src = e.target.result;
-                        videoPreview.style.display = 'block';
-                    }
-                };
-                reader.readAsDataURL(file);
-            }
-        });
-    };
-
-    // Update counters for important dates every minute
-    setInterval(updateImportantDatesList, 60 * 1000);
-
-    return {
-        loadImportantDates,
-        addImportantDate,
-        deleteImportantDate,
-        setupMediaPreview
-    };
-})();
-
-
-const ThemeManager = (() => {
-    const applyTheme = (themeName) => {
-        document.body.className = document.body.className.replace(/theme-\w+/g, '');
-        if (themeName !== 'dark') {
-            document.body.classList.add(`theme-${themeName}`);
+            document.body.style.backgroundImage = ''; // CSS'i temizle
+            document.body.style.backgroundColor = ''; // Eğer renk teması varsa geri dönsün
+            this.updateBackgroundPreview('');
+            UI.displayAuthMessage("Arka plan başarıyla kaldırıldı.", true);
+        } catch (error) {
+            console.error("Arka plan kaldırılırken hata:", error);
+            UI.displayAuthMessage("Arka plan kaldırılırken hata oluştu.", false);
         }
+    },
 
-        document.querySelectorAll('.theme-option').forEach(option => {
-            option.classList.remove('active');
-        });
-        document.querySelector(`.theme-option.${themeName}`).classList.add('active');
-        saveUserPreference('selectedTheme', themeName); // Save to Firebase
-    };
-
-    const loadUserPreferences = async () => {
-        const user = AuthManager.getCurrentUser();
-        if (!user) {
-            applyTheme('dark'); // Varsayılan tema
-            return;
-        }
-
+    saveUserBackgroundUrl: async function(url, userId) {
         try {
-            const docRef = window.db.collection('users').doc(user.uid);
+            const docRef = window.db.collection('users').doc(userId);
+            await docRef.set({ backgroundUrl: url }, { merge: true });
+            console.log("Arka plan URL'si kaydedildi.");
+        } catch (error) {
+            console.error("Arka plan URL'si kaydedilirken hata:", error);
+        }
+    },
+
+    loadUserBackground: async function(userId) {
+        try {
+            const docRef = window.db.collection('users').doc(userId);
             const docSnap = await docRef.get();
-            if (docSnap.exists() && docSnap.data().selectedTheme) {
-                applyTheme(docSnap.data().selectedTheme);
-            } else {
-                applyTheme('dark'); // Firebase'de yoksa varsayılan
-            }
-        } catch (e) {
-            console.error("Tema yüklenirken hata:", e);
-            applyTheme('dark'); // Hata durumunda varsayılan
-        }
-    };
-
-    const saveUserPreference = async (key, value) => {
-        const user = AuthManager.getCurrentUser();
-        if (!user) return;
-        try {
-            await window.db.collection('users').doc(user.uid).set({ [key]: value }, { merge: true });
-        } catch (e) {
-            console.error(`Kullanıcı tercihi (${key}) kaydedilirken hata:`, e);
-            alert("Tema ayarı kaydedilirken bir sorun oluştu.");
-        }
-    };
-
-    const changeBackgroundImage = async () => {
-        const user = AuthManager.getCurrentUser();
-        if (!user) {
-            alert("Lütfen önce giriş yapın.");
-            return;
-        }
-
-        const file = document.getElementById('backgroundInput').files[0];
-        if (file) {
-            const storageRef = window.storage.ref(`user_backgrounds/${user.uid}/${file.name}`);
-            try {
-                const snapshot = await storageRef.put(file);
-                const imageUrl = await snapshot.ref.getDownloadURL();
-                document.body.style.backgroundImage = `url(${imageUrl})`;
+            if (docSnap.exists && docSnap.data().backgroundUrl) {
+                const imageUrl = docSnap.data().backgroundUrl;
+                document.body.style.backgroundImage = `url('${imageUrl}')`;
                 document.body.style.backgroundSize = 'cover';
                 document.body.style.backgroundPosition = 'center';
                 document.body.style.backgroundAttachment = 'fixed';
-                saveUserPreference('backgroundImage', imageUrl); // Save URL to Firebase
-                updateBgPreview(imageUrl);
-                alert('Arka plan fotoğrafı yüklendi! 🖼️');
-            } catch (error) {
-                console.error("Arka plan yüklenirken hata:", error);
-                alert("Arka plan fotoğrafı yüklenirken bir sorun oluştu.");
-            }
-        }
-    };
-
-    const removeBackground = async () => {
-        const user = AuthManager.getCurrentUser();
-        if (!user) return;
-
-        try {
-            const docRef = window.db.collection('users').doc(user.uid);
-            const docSnap = await docRef.get();
-            const currentImageUrl = docSnap.exists() ? docSnap.data().backgroundImage : null;
-
-            if (currentImageUrl) {
-                const fileRef = window.storage.refFromURL(currentImageUrl);
-                await fileRef.delete();
-            }
-
-            document.body.style.backgroundImage = '';
-            document.body.style.background = 'var(--bg-gradient)';
-            await docRef.set({ backgroundImage: null }, { merge: true }); // Remove from Firebase
-            updateBgPreview(null);
-            alert('Arka plan fotoğrafı kaldırıldı. 🗑️');
-        } catch (e) {
-            console.error("Arka plan kaldırılırken hata:", e);
-            alert("Arka plan fotoğrafı kaldırılırken bir sorun oluştu.");
-        }
-    };
-
-    const loadBackgroundImage = async () => {
-        const user = AuthManager.getCurrentUser();
-        if (!user) {
-            document.body.style.backgroundImage = '';
-            document.body.style.background = 'var(--bg-gradient)';
-            updateBgPreview(null);
-            return;
-        }
-
-        try {
-            const docRef = window.db.collection('users').doc(user.uid);
-            const docSnap = await docRef.get();
-            if (docSnap.exists() && docSnap.data().backgroundImage) {
-                const imageUrl = docSnap.data().backgroundImage;
-                document.body.style.backgroundImage = `url(${imageUrl})`;
-                document.body.style.backgroundSize = 'cover';
-                document.body.style.backgroundPosition = 'center';
-                document.body.style.backgroundAttachment = 'fixed';
-                updateBgPreview(imageUrl);
+                this.updateBackgroundPreview(imageUrl);
+                console.log("Arka plan yüklendi.");
             } else {
-                document.body.style.backgroundImage = '';
-                document.body.style.background = 'var(--bg-gradient)';
-                updateBgPreview(null);
+                document.body.style.backgroundImage = ''; // Temizle
+                document.body.style.backgroundColor = ''; // CSS değişkenleri halleder
+                this.updateBackgroundPreview('');
+                console.log("Kullanıcı arka planı bulunamadı.");
             }
-        } catch (e) {
-            console.error("Arka plan resmi yüklenirken hata:", e);
-            document.body.style.backgroundImage = '';
-            document.body.style.background = 'var(--bg-gradient)';
-            updateBgPreview(null);
+        } catch (error) {
+            console.error("Arka plan yüklenirken hata:", error);
         }
-    };
+    },
 
-    const updateBgPreview = (imageUrl) => {
-        const bgPreview = document.getElementById('bgPreview');
-        if (imageUrl) {
-            bgPreview.style.backgroundImage = `url(${imageUrl})`;
+    updateBackgroundPreview: function(url = '') {
+        if (url) {
+            this.bgPreview.style.backgroundImage = `url('${url}')`;
         } else {
-            bgPreview.style.backgroundImage = 'none';
-            // Arka plan rengini mevcut temadan alarak daha doğru bir önizleme sağlarız
-            bgPreview.style.backgroundColor = getComputedStyle(document.body).getPropertyValue('--bg-gradient').includes('gradient') ? 'transparent' : getComputedStyle(document.body).backgroundColor;
+            this.bgPreview.style.backgroundImage = '';
+            // Varsayılan bir renk veya desen gösterebilirsiniz
+            this.bgPreview.style.backgroundColor = '#333'; 
         }
-    };
+    }
+};
 
-    const openCustomizationPanel = () => {
-        document.getElementById('customizationPanel').classList.add('show');
-        document.getElementById('overlay').classList.add('show');
-        ThemeManager.updateBgPreview(AuthManager.getCurrentUser()?.photoURL || null); // Try to get current background URL for preview
-    };
+// Tema seçenekleri tıklama olayları
+ThemeManager.themeOptions.forEach(option => {
+    option.addEventListener('click', () => {
+        const themeName = option.dataset.theme;
+        ThemeManager.applyTheme(themeName);
+    });
+});
 
-    const closeCustomizationPanel = () => {
-        document.getElementById('customizationPanel').classList.remove('show');
-        document.getElementById('overlay').classList.remove('show');
-    };
+// Arka plan inputu değiştiğinde
+ThemeManager.backgroundInput.addEventListener('change', function(event) {
+    const file = event.target.files[0];
+    if (file) {
+        ThemeManager.uploadBackground(file);
+    }
+});// Global değişkenlerin tanımlandığını varsayıyoruz (window.db, window.auth, window.storage, window.firebase)
+// Bu değişkenler index.html içindeki <script type="module"> bloğunda tanımlanır.
 
-    const setupEventListeners = () => {
-        document.querySelectorAll('.theme-option').forEach(option => {
-            option.addEventListener('click', () => applyTheme(option.dataset.theme));
-        });
-        document.getElementById('backgroundInput').addEventListener('change', changeBackgroundImage);
-    };
+// --- UI Yönetimi ---
+const UI = {
+    authPage: document.getElementById('authPage'),
+    mainPage: document.getElementById('mainPage'),
+    aboutPage: document.getElementById('aboutPage'),
+    datesPage: document.getElementById('datesPage'),
+    authStatus: document.getElementById('authStatus'),
+    authMessage: document.getElementById('authMessage'),
+    loggedInControls: document.getElementById('loggedInControls'),
+    appFooterControls: document.getElementById('appFooterControls'),
 
-    return {
-        applyTheme,
-        loadUserPreferences,
-        changeBackgroundImage,
-        removeBackground,
-        loadBackgroundImage,
-        updateBgPreview,
-        openCustomizationPanel,
-        closeCustomizationPanel,
-        setupEventListeners
-    };
-})();
+    showSection: function(sectionId) {
+        // Tüm ana bölümleri gizle
+        this.authPage.classList.add('hidden');
+        this.mainPage.classList.add('hidden');
+        this.aboutPage.classList.add('hidden');
+        this.datesPage.classList.add('hidden');
+
+        // İstenen bölümü göster
+        document.getElementById(sectionId).classList.remove('hidden');
+    },
+
+    displayAuthMessage: function(message, isSuccess = false) {
+        this.authMessage.textContent = message;
+        this.authMessage.className = 'auth-message'; // Önceki sınıfları temizle
+        if (isSuccess) {
+            this.authMessage.classList.add('success');
+        } else {
+            this.authMessage.classList.add('error');
+        }
+    },
+
+    clearAuthMessage: function() {
+        this.authMessage.textContent = '';
+        this.authMessage.className = 'auth-message';
+    }
+};
+
+// --- Kimlik Doğrulama Yönetimi ---
+const AuthManager = {
+    emailInput: document.getElementById('authEmail'),
+    passwordInput: document.getElementById('authPassword'),
+
+    signUp: async function() {
+        UI.clearAuthMessage();
+        const email = this.emailInput.value;
+        const password = this.passwordInput.value;
+
+        if (!email || !password) {
+            UI.displayAuthMessage("E-posta ve şifre boş bırakılamaz.");
+            return;
+        }
+
+        try {
+            await window.auth.createUserWithEmailAndPassword(email, password);
+            UI.displayAuthMessage("Kayıt başarılı! Giriş yapılıyor...", true);
+            // Başarılı kayıttan sonra otomatik giriş onAuthStateChanged tarafından halledilecek
+        } catch (error) {
+            console.error("Kayıt hatası:", error);
+            let errorMessage = "Kayıt sırasında bir hata oluştu.";
+            if (error.code === 'auth/email-already-in-use') {
+                errorMessage = "Bu e-posta adresi zaten kullanılıyor.";
+            } else if (error.code === 'auth/invalid-email') {
+                errorMessage = "Geçersiz e-posta adresi.";
+            } else if (error.code === 'auth/weak-password') {
+                errorMessage = "Şifre en az 6 karakter olmalı.";
+            }
+            UI.displayAuthMessage(errorMessage);
+        }
+    },
+
+    signIn: async function() {
+        UI.clearAuthMessage();
+        const email = this.emailInput.value;
+        const password = this.passwordInput.value;
+
+        if (!email || !password) {
+            UI.displayAuthMessage("E-posta ve şifre boş bırakılamaz.");
+            return;
+        }
+
+        try {
+            await window.auth.signInWithEmailAndPassword(email, password);
+            UI.displayAuthMessage("Giriş başarılı!", true);
+            // Başarılı giriş onAuthStateChanged tarafından halledilecek
+        } catch (error) {
+            console.error("Giriş hatası:", error);
+            let errorMessage = "Giriş sırasında bir hata oluştu.";
+            if (error.code === 'auth/invalid-email' || error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
+                errorMessage = "Yanlış e-posta veya şifre.";
+            }
+            UI.displayAuthMessage(errorMessage);
+        }
+    },
+
+    signOut: async function() {
+        try {
+            await window.auth.signOut();
+            console.log("Çıkış yapıldı.");
+            UI.displayAuthMessage("Başarıyla çıkış yaptınız.", true);
+            // onAuthStateChanged tetiklenecek ve arayüzü güncelleyecek
+        } catch (error) {
+            console.error("Çıkış hatası:", error);
+            UI.displayAuthMessage("Çıkış sırasında bir hata oluştu.");
+        }
+    }
+};
 
 
-const UI = (() => {
-    const showSection = (sectionId) => {
-        const sections = ['mainPage', 'aboutPage', 'datesPage', 'authPage'];
-        sections.forEach(id => {
-            const section = document.getElementById(id);
-            if (id === sectionId) {
-                section.classList.remove('hidden');
-                // Belirli bölümler yüklendiğinde verilerini çek
-                if (id === 'datesPage') {
-                    DateManager.loadImportantDates();
-                } else if (id === 'aboutPage') {
-                    StoryManager.loadStory('eda');
-                    StoryManager.loadStory('emin');
-                }
+// --- Kimlik Doğrulama Durumu Değişikliklerini Dinle ---
+// Bu blok, sayfa yüklendiğinde veya kullanıcı giriş/çıkış yaptığında tetiklenir.
+if (window.auth) { // window.auth'un tanımlı olduğundan emin ol
+    window.auth.onAuthStateChanged(user => {
+        if (user) {
+            console.log("Kullanıcı giriş yaptı:", user.uid);
+            UI.authStatus.textContent = `Hoş geldin, ${user.email}!`;
+            UI.authPage.classList.add('hidden');
+            UI.mainPage.classList.remove('hidden');
+            UI.loggedInControls.classList.remove('hidden');
+            UI.appFooterControls.classList.remove('hidden');
+            
+            // Kullanıcıya özel verileri yükle
+            Counter.loadMainDate(user.uid);
+            StoryManager.loadStory('eda', user.uid);
+            StoryManager.loadStory('emin', user.uid);
+            DateManager.loadImportantDates(user.uid);
+            ThemeManager.loadUserTheme(user.uid);
+            ThemeManager.loadUserBackground(user.uid);
+
+        } else {
+            console.log("Kullanıcı çıkış yaptı veya giriş yapmadı.");
+            UI.authStatus.textContent = "Lütfen giriş yapın veya kayıt olun.";
+            UI.authPage.classList.remove('hidden');
+            UI.mainPage.classList.add('hidden');
+            UI.aboutPage.classList.add('hidden'); // Diğer sayfaları da gizle
+            UI.datesPage.classList.add('hidden'); // Diğer sayfaları da gizle
+            UI.loggedInControls.classList.add('hidden');
+            UI.appFooterControls.classList.add('hidden');
+            UI.clearAuthMessage();
+            // Varsayılan temaya dön veya boş tema ayarla
+            document.body.className = ''; 
+            document.body.style.backgroundImage = '';
+            document.body.style.backgroundColor = '';
+        }
+    });
+} else {
+    console.error("Firebase Auth başlatılamadı. AuthManager çalışmayacak.");
+    UI.displayAuthMessage("Uygulama başlatılamadı. Lütfen konsolu kontrol edin.", false);
+}
+
+
+// --- Sayaç Yönetimi ---
+const Counter = {
+    mainDateInput: document.getElementById('mainDateInput'),
+    mainCounterTitle: document.getElementById('mainCounterTitle'),
+    timerInterval: null,
+    
+    // Ana sayacı ve başlangıç tarihini yükler
+    loadMainDate: async function(userId) {
+        try {
+            const docRef = window.db.collection('users').doc(userId);
+            const docSnap = await docRef.get();
+
+            if (docSnap.exists && docSnap.data().mainDate) {
+                const mainDate = docSnap.data().mainDate.toDate(); // Timestamp'ten Date objesine çevir
+                this.mainDateInput.valueAsDate = mainDate;
+                this.startCounter(mainDate);
+                this.updateMainCounterTitle(mainDate);
             } else {
-                section.classList.add('hidden');
+                console.log("Ana tarih bulunamadı, varsayılanı ayarla.");
+                const defaultDate = new Date(); // Bugünün tarihi
+                this.mainDateInput.valueAsDate = defaultDate;
+                this.startCounter(defaultDate);
+                this.updateMainCounterTitle(defaultDate);
+            }
+        } catch (error) {
+            console.error("Ana tarih yüklenirken hata:", error);
+        }
+    },
+
+    // Ana tarihi günceller ve Firestore'a kaydeder
+    saveMainDate: async function(date, userId) {
+        try {
+            const docRef = window.db.collection('users').doc(userId);
+            await docRef.set({ mainDate: date }, { merge: true }); // Sadece mainDate'i güncelleyin
+            console.log("Ana tarih kaydedildi.");
+        } catch (error) {
+            console.error("Ana tarih kaydedilirken hata:", error);
+        }
+    },
+
+    // Başlangıç tarihini inputtan alıp sayacı başlatır
+    startCounter: function(startDate) {
+        if (this.timerInterval) {
+            clearInterval(this.timerInterval);
+        }
+
+        this.updateMainCounterTitle(startDate);
+
+        this.timerInterval = setInterval(() => {
+            const now = new Date();
+            const diff = now.getTime() - startDate.getTime(); // Fark milisaniye cinsinden
+
+            if (diff < 0) { // Gelecek bir tarih seçilirse
+                document.getElementById('years').textContent = "0";
+                document.getElementById('months').textContent = "0";
+                document.getElementById('days').textContent = "0";
+                document.getElementById('hours').textContent = "0";
+                document.getElementById('minutes').textContent = "0";
+                document.getElementById('seconds').textContent = "0";
+                this.mainCounterTitle.textContent = "Henüz başlamadı...";
+                return;
+            }
+
+            const seconds = Math.floor(diff / 1000);
+            const minutes = Math.floor(seconds / 60);
+            const hours = Math.floor(minutes / 60);
+            const days = Math.floor(hours / 24);
+
+            // Daha doğru yıl ve ay hesaplaması
+            let years = 0;
+            let months = 0;
+            let tempDate = new Date(startDate);
+            let totalMonths = 0;
+
+            while (tempDate < now) {
+                tempDate.setMonth(tempDate.getMonth() + 1);
+                if (tempDate <= now) {
+                    totalMonths++;
+                } else {
+                    tempDate.setMonth(tempDate.getMonth() - 1); // Geri al
+                    break;
+                }
+            }
+
+            years = Math.floor(totalMonths / 12);
+            months = totalMonths % 12;
+
+            // Kalan gün, saat, dakika, saniye
+            const remainingDays = days - (years * 365 + Math.floor(years / 4)); // Kaba bir tahmin, tam doğru değil
+            const remainingHours = hours % 24;
+            const remainingMinutes = minutes % 60;
+            const remainingSeconds = seconds % 60;
+
+            document.getElementById('years').textContent = years;
+            document.getElementById('months').textContent = months;
+            document.getElementById('days').textContent = remainingDays < 0 ? 0 : remainingDays; // Negatif olmaması için
+            document.getElementById('hours').textContent = remainingHours;
+            document.getElementById('minutes').textContent = remainingMinutes;
+            document.getElementById('seconds').textContent = remainingSeconds;
+
+        }, 1000);
+    },
+
+    updateMainCounterTitle: function(date) {
+        const today = new Date();
+        const diffDays = Math.floor((today.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
+        if (diffDays >= 0) {
+             this.mainCounterTitle.textContent = `${date.toLocaleDateString()} tarihinden beri geçen süre`;
+        } else {
+            this.mainCounterTitle.textContent = `${date.toLocaleDateString()} tarihine kalan süre`;
+        }
+       
+    }
+};
+
+// Ana tarih inputu değiştiğinde
+document.getElementById('mainDateInput').addEventListener('change', async function() {
+    const selectedDate = this.valueAsDate;
+    if (selectedDate && window.auth.currentUser) {
+        Counter.startCounter(selectedDate);
+        Counter.saveMainDate(selectedDate, window.auth.currentUser.uid);
+    }
+});
+
+
+// --- Hikaye Yönetimi ---
+const StoryManager = {
+    saveStory: async function(person) {
+        if (!window.auth.currentUser) {
+            console.error("Kullanıcı girişi yapılmamış.");
+            return;
+        }
+        const userId = window.auth.currentUser.uid;
+        const textareaId = `${person}Textarea`;
+        const storyText = document.getElementById(textareaId).value;
+
+        try {
+            const docRef = window.db.collection('users').doc(userId);
+            // Sadece ilgili hikaye alanını güncelle
+            const updateData = {};
+            updateData[`story.${person}`] = storyText;
+            await docRef.set(updateData, { merge: true });
+            console.log(`${person} hikayesi kaydedildi.`);
+            UI.displayAuthMessage(`${person} hikayesi başarıyla kaydedildi!`, true);
+            // Hikayeyi hemen güncellenen değeriyle göster
+            document.getElementById(`${person}Story`).innerHTML = StoryManager.formatStoryText(storyText);
+        } catch (error) {
+            console.error(`${person} hikayesi kaydedilirken hata:`, error);
+            UI.displayAuthMessage(`${person} hikayesi kaydedilirken hata oluştu.`, false);
+        }
+    },
+
+    loadStory: async function(person, userId) {
+        try {
+            const docRef = window.db.collection('users').doc(userId);
+            const docSnap = await docRef.get();
+            const storyDiv = document.getElementById(`${person}Story`);
+            const textarea = document.getElementById(`${person}Textarea`);
+
+            if (docSnap.exists && docSnap.data().story && docSnap.data().story[person]) {
+                const storyText = docSnap.data().story[person];
+                storyDiv.innerHTML = this.formatStoryText(storyText);
+                textarea.value = storyText;
+            } else {
+                storyDiv.innerHTML = `<p>Henüz bir hikaye yazılmamış. İlk hikayeni sen yaz!</p>`;
+                textarea.value = '';
+            }
+        } catch (error) {
+            console.error(`${person} hikayesi yüklenirken hata:`, error);
+            document.getElementById(`${person}Story`).innerHTML = `<p class="error">Hikaye yüklenirken hata oluştu.</p>`;
+        }
+    },
+
+    // Metinleri <p> etiketlerine bölerek formatlar
+    formatStoryText: function(text) {
+        if (!text) return '<p>Henüz bir hikaye yazılmamış.</p>';
+        return text.split('\n\n').map(p => `<p>${p.replace(/\n/g, '<br>')}</p>`).join('');
+    }
+};
+
+// --- Önemli Tarihler Yönetimi ---
+const DateManager = {
+    descriptionInput: document.getElementById('dateDescription'),
+    dateInput: document.getElementById('dateInput'),
+    mediaInput: document.getElementById('mediaInput'),
+    importantDatesList: document.getElementById('importantDatesList'),
+    imagePreview: document.getElementById('imagePreview'),
+    videoPreview: document.getElementById('videoPreview'),
+    mediaPreviewContainer: document.getElementById('mediaPreviewContainer'),
+
+    addImportantDate: async function() {
+        if (!window.auth.currentUser) {
+            console.error("Kullanıcı girişi yapılmamış.");
+            return;
+        }
+        const userId = window.auth.currentUser.uid;
+        const description = this.descriptionInput.value;
+        const date = this.dateInput.valueAsDate;
+        const file = this.mediaInput.files[0];
+
+        if (!description || !date) {
+            UI.displayAuthMessage("Açıklama ve tarih boş bırakılamaz.", false);
+            return;
+        }
+        UI.clearAuthMessage();
+
+        let mediaUrl = null;
+        let mediaType = null;
+
+        if (file) {
+            UI.displayAuthMessage("Medya yükleniyor...", true);
+            try {
+                // Firebase Storage'a yükleme işlemi
+                const storageRef = window.storage.ref(window.storage, `user_uploads/${userId}/${Date.now()}_${file.name}`);
+                const snapshot = await window.storage.uploadBytes(storageRef, file);
+                mediaUrl = await window.storage.getDownloadURL(snapshot.ref);
+                mediaType = file.type.startsWith('image/') ? 'image' : 'video';
+                UI.displayAuthMessage("Medya başarıyla yüklendi.", true);
+            } catch (error) {
+                console.error("Medya yükleme hatası:", error);
+                UI.displayAuthMessage("Medya yüklenirken hata oluştu.", false);
+                return;
+            }
+        }
+
+        try {
+            await window.db.collection('users').doc(userId).collection('importantDates').add({
+                description: description,
+                date: date,
+                mediaUrl: mediaUrl,
+                mediaType: mediaType,
+                createdAt: new Date() // Server timestamp yerine doğrudan JavaScript Date objesi kullanıyoruz
+            });
+            console.log("Önemli tarih eklendi.");
+            UI.displayAuthMessage("Önemli tarih başarıyla eklendi!", true);
+            this.clearDateForm();
+            this.loadImportantDates(userId); // Listeyi yeniden yükle
+        } catch (error) {
+            console.error("Tarih eklenirken hata:", error);
+            UI.displayAuthMessage("Tarih eklenirken hata oluştu.", false);
+        }
+    },
+
+    loadImportantDates: async function(userId) {
+        this.importantDatesList.innerHTML = '<p style="text-align: center; opacity: 0.7;">Yükleniyor...</p>';
+        try {
+            const querySnapshot = await window.db.collection('users').doc(userId).collection('importantDates').orderBy('date', 'desc').get();
+            this.importantDatesList.innerHTML = ''; // Temizle
+            if (querySnapshot.empty) {
+                this.importantDatesList.innerHTML = '<p style="text-align: center;">Henüz önemli bir tarih eklenmemiş. Haydi bir tane ekle!</p>';
+                return;
+            }
+
+            querySnapshot.forEach(doc => {
+                const data = doc.data();
+                const dateObj = data.date ? data.date.toDate() : null; // Timestamp'i Date objesine çevir
+                const dateString = dateObj ? dateObj.toLocaleDateString('tr-TR', { year: 'numeric', month: 'long', day: 'numeric' }) : 'Tarih belirtilmemiş';
+                
+                let mediaHtml = '';
+                if (data.mediaUrl && data.mediaType) {
+                    if (data.mediaType === 'image') {
+                        mediaHtml = `<div class="date-media"><img src="${data.mediaUrl}" alt="${data.description}"></div>`;
+                    } else if (data.mediaType === 'video') {
+                        mediaHtml = `<div class="date-media"><video controls src="${data.mediaUrl}"></video></div>`;
+                    }
+                }
+
+                // Tarihe kalan/geçen süreyi hesapla
+                const now = new Date();
+                let diffText = '';
+                if (dateObj) {
+                    const diffMs = now.getTime() - dateObj.getTime();
+                    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+                    if (diffDays === 0) {
+                        diffText = "Bugün!";
+                    } else if (diffDays > 0) {
+                        diffText = `${diffDays} gün önce`;
+                    } else { // Gelecekteki tarih
+                        diffText = `${Math.abs(diffDays)} gün sonra`;
+                    }
+                }
+
+                this.importantDatesList.innerHTML += `
+                    <div class="date-item" data-id="${doc.id}" data-media-url="${data.mediaUrl || ''}">
+                        <div class="date-title">${data.description}</div>
+                        <div class="date-display">${dateString}</div>
+                        ${mediaHtml}
+                        <div class="date-counter">${diffText}</div>
+                        <button class="delete-btn" onclick="DateManager.deleteImportantDate('${doc.id}', '${data.mediaUrl || ''}')">Sil</button>
+                    </div>
+                `;
+            });
+        } catch (error) {
+            console.error("Önemli tarihler yüklenirken hata:", error);
+            this.importantDatesList.innerHTML = '<p class="error">Tarihler yüklenirken hata oluştu.</p>';
+        }
+    },
+
+    deleteImportantDate: async function(docId, mediaUrl) {
+        if (!window.auth.currentUser) {
+            console.error("Kullanıcı girişi yapılmamış.");
+            return;
+        }
+        const userId = window.auth.currentUser.uid;
+        if (confirm("Bu tarihi silmek istediğinizden emin misiniz?")) {
+            try {
+                // Medya dosyasını Storage'dan sil (varsa)
+                if (mediaUrl) {
+                    const fileRef = window.storage.ref(window.storage, mediaUrl);
+                    await window.storage.deleteObject(fileRef).catch(e => {
+                        if (e.code === 'storage/object-not-found') {
+                            console.log("Silinecek eski arka plan dosyası bulunamadı, sorun değil.");
+                        } else {
+                            throw e; // Başka bir hata varsa tekrar fırlat
+                        }
+                    });
+                    console.log("Medya dosyası silindi (varsa).");
+                }
+
+                // Firestore dokümanını sil
+                await window.db.collection('users').doc(userId).collection('importantDates').doc(docId).delete();
+                console.log("Tarih silindi.");
+                UI.displayAuthMessage("Tarih başarıyla silindi.", true);
+                this.loadImportantDates(userId); // Listeyi yeniden yükle
+            } catch (error) {
+                console.error("Tarih silinirken hata:", error);
+                UI.displayAuthMessage("Tarih silinirken hata oluştu.", false);
+            }
+        }
+    },
+
+    clearDateForm: function() {
+        this.descriptionInput.value = '';
+        this.dateInput.value = '';
+        this.mediaInput.value = ''; // File inputu temizle
+        this.imagePreview.style.display = 'none';
+        this.imagePreview.src = '#';
+        this.videoPreview.style.display = 'none';
+        this.videoPreview.src = '#';
+        this.mediaPreviewContainer.style.display = 'none';
+    }
+};
+
+// Medya önizlemesi için event listener
+document.getElementById('mediaInput').addEventListener('change', function(event) {
+    const file = event.target.files[0];
+    if (file) {
+        const fileType = file.type;
+        const reader = new FileReader();
+
+        reader.onload = function(e) {
+            DateManager.mediaPreviewContainer.style.display = 'block';
+            if (fileType.startsWith('image/')) {
+                DateManager.imagePreview.src = e.target.result;
+                DateManager.imagePreview.style.display = 'block';
+                DateManager.videoPreview.style.display = 'none';
+            } else if (fileType.startsWith('video/')) {
+                DateManager.videoPreview.src = e.target.result;
+                DateManager.videoPreview.style.display = 'block';
+                DateManager.imagePreview.style.display = 'none';
+            }
+        };
+        reader.readAsDataURL(file);
+    } else {
+        DateManager.mediaPreviewContainer.style.display = 'none';
+        DateManager.imagePreview.src = '#';
+        DateManager.videoPreview.src = '#';
+        DateManager.imagePreview.style.display = 'none';
+        DateManager.videoPreview.style.display = 'none';
+    }
+});
+
+
+// --- Tema ve Arka Plan Yönetimi ---
+const ThemeManager = {
+    customizationPanel: document.getElementById('customizationPanel'),
+    overlay: document.getElementById('overlay'),
+    themeOptions: document.querySelectorAll('.theme-option'),
+    backgroundInput: document.getElementById('backgroundInput'),
+    bgPreview: document.getElementById('bgPreview'),
+
+    openCustomizationPanel: function() {
+        this.customizationPanel.classList.add('show');
+        this.overlay.classList.add('show');
+        this.updateThemeActiveStates();
+        this.updateBackgroundPreview();
+    },
+
+    closeCustomizationPanel: function() {
+        this.customizationPanel.classList.remove('show');
+        this.overlay.classList.remove('show');
+    },
+
+    applyTheme: function(themeName) {
+        document.body.className = `theme-${themeName}`; // 'theme-' önekini ekliyoruz
+        if (window.auth.currentUser) {
+            this.saveUserTheme(themeName, window.auth.currentUser.uid);
+        }
+        this.updateThemeActiveStates();
+    },
+
+    saveUserTheme: async function(themeName, userId) {
+        try {
+            const docRef = window.db.collection('users').doc(userId);
+            await docRef.set({ theme: themeName }, { merge: true });
+            console.log("Tema kaydedildi:", themeName);
+        } catch (error) {
+            console.error("Tema kaydedilirken hata:", error);
+        }
+    },
+
+    loadUserTheme: async function(userId) {
+        try {
+            const docRef = window.db.collection('users').doc(userId);
+            const docSnap = await docRef.get();
+            if (docSnap.exists && docSnap.data().theme) {
+                const savedTheme = docSnap.data().theme;
+                document.body.className = `theme-${savedTheme}`;
+                console.log("Tema yüklendi:", savedTheme);
+            } else {
+                console.log("Kullanıcı teması bulunamadı, varsayılan tema uygulanıyor.");
+                document.body.className = `theme-dark`; // Varsayılan tema
+            }
+            this.updateThemeActiveStates();
+        } catch (error) {
+            console.error("Tema yüklenirken hata:", error);
+        }
+    },
+
+    updateThemeActiveStates: function() {
+        this.themeOptions.forEach(option => {
+            option.classList.remove('active');
+            if (document.body.classList.contains(option.dataset.theme)) {
+                option.classList.add('active');
             }
         });
-    };
+    },
 
-    const hideAllSections = () => {
-        const sections = ['mainPage', 'aboutPage', 'datesPage', 'authPage'];
-        sections.forEach(id => {
-            document.getElementById(id).classList.add('hidden');
-        });
-    };
+    uploadBackground: async function(file) {
+        if (!window.auth.currentUser) {
+            console.error("Kullanıcı girişi yapılmamış.");
+            return;
+        }
+        const userId = window.auth.currentUser.uid;
+        if (!file) {
+            console.log("Dosya seçilmedi.");
+            return;
+        }
 
-    const initialize = () => {
-        ThemeManager.setupEventListeners();
-        DateManager.setupMediaPreview();
-        // AuthManager zaten onAuthStateChanged ile başlangıç durumunu yönetecek.
-        // UI.showSection('authPage'); // Başlangıçta Auth sayfasını göster
-    };
+        UI.displayAuthMessage("Arka plan yükleniyor...", true);
+        try {
+            const storageRef = window.storage.ref(window.storage, `user_backgrounds/${userId}/custom_background`);
+            const snapshot = await window.storage.uploadBytes(storageRef, file);
+            const imageUrl = await window.storage.getDownloadURL(snapshot.ref);
+            
+            document.body.style.backgroundImage = `url('${imageUrl}')`;
+            document.body.style.backgroundSize = 'cover';
+            document.body.style.backgroundPosition = 'center';
+            document.body.style.backgroundAttachment = 'fixed'; // Eklemeyi unutmayın
+            
+            this.saveUserBackgroundUrl(imageUrl, userId);
+            this.updateBackgroundPreview(imageUrl);
+            UI.displayAuthMessage("Arka plan başarıyla yüklendi!", true);
+        } catch (error) {
+            console.error("Arka plan yükleme hatası:", error);
+            UI.displayAuthMessage("Arka plan yüklenirken hata oluştu.", false);
+        }
+    },
 
-    return {
-        showSection,
-        hideAllSections,
-        initialize
-    };
-})();
+    removeBackground: async function() {
+        if (!window.auth.currentUser) {
+            console.error("Kullanıcı girişi yapılmamış.");
+            return;
+        }
+        const userId = window.auth.currentUser.uid;
+        
+        try {
+            // Firestore'daki URL'yi kaldır
+            const docRef = window.db.collection('users').doc(userId);
+            // FieldValue.delete() import edildiği için doğrudan kullanılabilir
+            await docRef.set({ backgroundUrl: window.firebase.firestore.FieldValue.delete() }, { merge: true });
+            
+            // Storage'dan dosyayı sil (eğer daha önce yüklenmişse)
+            // Bu kısım biraz karmaşık olabilir çünkü dosyanın tam yolunu bilmemiz gerekiyor.
+            // Örnek: user_backgrounds/userId/custom_background
+            const fileRef = window.storage.ref(window.storage, `user_backgrounds/${userId}/custom_background`);
+            // Dosya yoksa hata vermemesi için catch bloğu ekledik.
+            await window.storage.deleteObject(fileRef).catch(e => {
+                if (e.code === 'storage/object-not-found') {
+                    console.log("Silinecek eski arka plan dosyası bulunamadı, sorun değil.");
+                } else {
+                    throw e; // Başka bir hata varsa tekrar fırlat
+                }
+            });
 
+            document.body.style.backgroundImage = ''; // CSS'i temizle
+            document.body.style.backgroundColor = ''; // Eğer renk teması varsa geri dönsün
+            this.updateBackgroundPreview('');
+            UI.displayAuthMessage("Arka plan başarıyla kaldırıldı.", true);
+        } catch (error) {
+            console.error("Arka plan kaldırılırken hata:", error);
+            UI.displayAuthMessage("Arka plan kaldırılırken hata oluştu.", false);
+        }
+    },
 
-// --- Uygulama Başlangıcı ---
-document.addEventListener('DOMContentLoaded', () => {
-    UI.initialize();
-    document.getElementById('mainDateInput').addEventListener('change', Counter.setMainStartDate);
-    // İlk yüklemede, Firebase'in Auth durumu değişince UI otomatik güncellenecek
+    saveUserBackgroundUrl: async function(url, userId) {
+        try {
+            const docRef = window.db.collection('users').doc(userId);
+            await docRef.set({ backgroundUrl: url }, { merge: true });
+            console.log("Arka plan URL'si kaydedildi.");
+        } catch (error) {
+            console.error("Arka plan URL'si kaydedilirken hata:", error);
+        }
+    },
+
+    loadUserBackground: async function(userId) {
+        try {
+            const docRef = window.db.collection('users').doc(userId);
+            const docSnap = await docRef.get();
+            if (docSnap.exists && docSnap.data().backgroundUrl) {
+                const imageUrl = docSnap.data().backgroundUrl;
+                document.body.style.backgroundImage = `url('${imageUrl}')`;
+                document.body.style.backgroundSize = 'cover';
+                document.body.style.backgroundPosition = 'center';
+                document.body.style.backgroundAttachment = 'fixed';
+                this.updateBackgroundPreview(imageUrl);
+                console.log("Arka plan yüklendi.");
+            } else {
+                document.body.style.backgroundImage = ''; // Temizle
+                document.body.style.backgroundColor = ''; // CSS değişkenleri halleder
+                this.updateBackgroundPreview('');
+                console.log("Kullanıcı arka planı bulunamadı.");
+            }
+        } catch (error) {
+            console.error("Arka plan yüklenirken hata:", error);
+        }
+    },
+
+    updateBackgroundPreview: function(url = '') {
+        if (url) {
+            this.bgPreview.style.backgroundImage = `url('${url}')`;
+        } else {
+            this.bgPreview.style.backgroundImage = '';
+            // Varsayılan bir renk veya desen gösterebilirsiniz
+            this.bgPreview.style.backgroundColor = '#333'; 
+        }
+    }
+};
+
+// Tema seçenekleri tıklama olayları
+ThemeManager.themeOptions.forEach(option => {
+    option.addEventListener('click', () => {
+        const themeName = option.dataset.theme;
+        ThemeManager.applyTheme(themeName);
+    });
+});
+
+// Arka plan inputu değiştiğinde
+ThemeManager.backgroundInput.addEventListener('change', function(event) {
+    const file = event.target.files[0];
+    if (file) {
+        ThemeManager.uploadBackground(file);
+    }
 });
